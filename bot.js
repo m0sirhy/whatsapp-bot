@@ -31,13 +31,8 @@ const client = new Client({
 
         protocolTimeout: 120000,
 
-        timeout: 0,
-        navigationTimeout: 0, 
-        authTimeoutMs: 0,
-        qrMaxRetries: 10,
-        handleSIGINT: false,
-        handleSIGTERM: false,
-        handleSIGHUP: false,
+        timeout: 0
+        
 
     }
 
