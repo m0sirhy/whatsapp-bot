@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Login WhatsApp</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        #qrcode img {
+            width: 300px;
+            height: 300px;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/navbar') %>
+
+        <h1>مسح QR لتسجيل الدخول</h1>
+        <div id="qrcode"></div>
+        <div id="status">جارٍ انتظار رمز QR...</div>
+
+        <script>
+            const socket = io();
+
+            socket.on('qr', url => {
+                const qrDiv = document.getElementById('qrcode');
+                qrDiv.innerHTML = ""; // تنظيف أي QR سابق
+
+                const img = document.createElement('img');
+                img.src = url; // السيرفر أرسل DataURL جاهز
+                qrDiv.appendChild(img);
+
+                document.getElementById('status').innerText = "الرجاء مسح QR من تطبيق WhatsApp";
+            });
+
+            socket.on('ready', () => {
+                document.getElementById('status').innerText = "WhatsApp جاهز ✅";
+                document.getElementById('qrcode').innerHTML = "";
+            });
+
+            socket.on('authenticated', () => {
+                document.getElementById('status').innerText = "تم تسجيل الدخول بنجاح ✅";
+                document.getElementById('qrcode').innerHTML = "";
+            });
+
+            socket.on('message', msg => {
+                // يمكن استقبال أي رسائل إضافية من السيرفر
+                console.log("رسالة من السيرفر:", msg);
+            });
+        </script>
+</body>
+
+</html>

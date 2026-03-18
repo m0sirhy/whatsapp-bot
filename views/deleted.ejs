@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+<meta charset="UTF-8">
+<title>الدفعات المحذوفة</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
+</head>
+
+<body class="p-4">
+
+<div class="container">
+            <%- include('partials/navbar') %>
+
+<h3>الدفعات المحذوفة</h3>
+
+<table id="deletedTable" class="table table-striped table-bordered">
+<thead>
+<tr>
+<th>اسم المشترك</th>
+<th>قيمة الدفعة</th>
+<th>صاحب الحساب المرسل</th>
+<th>رقم المرسل</th>
+<th>اسم المرسل</th>
+<th>تاريخ الدفعة</th>
+<th>تاريخ التسجيل</th>
+<th>الإشعار</th>
+<th>استعادة</th>
+</tr>
+</thead>
+</table>
+
+</div>
+
+
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+
+<script>
+
+$(document).ready(function(){
+const table = $('#deletedTable').DataTable({
+
+ajax:{
+    url:"/api/payments/deleted",
+    dataSrc:""
+},
+
+columns: [
+
+{ data:"name" },
+{ data:"amount" },
+{ data:"sender" },
+{ data:"senderNumber" },
+{ data:"senderName" },
+{ data:"datePayment" },
+{ data:"dateRecorded" },
+
+
+{
+data:"receipt",
+render:function(data){
+
+if(data && data !== "لا يوجد"){
+
+const fileName = data.split(/[/\\]/).pop()
+
+return `
+<a href="/receipts/${fileName}" target="_blank" class="btn btn-sm btn-primary mb-1">فتح</a><br>
+<img src="/receipts/${fileName}" class="img-thumbnail" style="max-width:120px">
+`
+
+}
+
+return '<span class="text-muted">لا يوجد</span>'
+
+}
+},
+
+{
+data:"id",
+render:function(id){
+
+return `<button class="btn btn-success btn-sm restoreBtn" data-id="${id}">
+استعادة
+</button>`
+
+}
+}
+
+],
+
+language:{ url:"https://cdn.datatables.net/plug-ins/1.13.6/i18n/ar.json" },
+
+pageLength:10
+
+})
+
+
+// زر الاستعادة
+
+$('#deletedTable').on('click','.restoreBtn',function(){
+
+const id=$(this).data('id')
+
+if(confirm("هل تريد استعادة هذه الدفعة؟")){
+
+$.post(`/api/payments/restore/${id}`,function(){
+
+table.ajax.reload(null,false)
+
+})
+
+}
+
+})
+
+
+// تحديث تلقائي
+
+setInterval(()=>table.ajax.reload(null,false),2000)
+
+})
+
+</script>
+
+</body>
+</html>

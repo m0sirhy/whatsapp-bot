@@ -1,0 +1,9 @@
+/node_modules
+/wwebjs_auth/
+/wwebjs_cache/
+.wwebjs_auth/
+.wwebjs_cache/
+payments.db
+receipts/
+*.traineddata
+payments.xlsx

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>دفعات المشتركين</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        img { max-width: 100px; height: auto; }
+        table.dataTable tbody tr:nth-child(even) { background-color: #f9f9f9; }
+        table.dataTable tbody tr:hover { background-color: #d1ecf1 !important; }
+        th { text-align: right; }
+        td { vertical-align: middle; }
+    </style>
+</head>
+<body>
+<div class="container">
+                <%- include('partials/navbar') %>
+
+    <h1 class="mb-4 text-center">دفعات المشتركين</h1>
+
+    <table id="paymentsTable" class="table table-striped table-bordered" style="width:100%">
+        <thead class="table-dark">
+        <tr>
+            <th>اسم المشترك</th>
+            <th>قيمة الدفعة</th>
+            <th>صاحب الحساب المرسل</th>
+            <th>اسم المرسل</th>
+            <th>تاريخ الدفعة</th>
+            <th>تاريخ تسجيل الدفعة</th>
+            <th>الإشعار</th>
+            <th>الإجراءات</th>
+        </tr>
+        </thead>
+    </table>
+</div>
+
+<!-- jQuery -->
+<script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+<!-- DataTables JS -->
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+<!-- صوت الإشعار -->
+<audio id="notifySound" src="/sounds/notification.mp3" preload="auto"></audio>
+
+<script>
+$(document).ready(function() {
+    let lastCount = 0;
+
+    const table = $('#paymentsTable').DataTable({
+        ajax: {
+            url: "/api/payments",
+            dataSrc: "",
+            error: function(xhr, error, thrown) {
+                console.error("AJAX Error:", error, thrown);
+            }
+        },
+        columns: [
+            { data: "name" },
+            { data: "amount" },
+            { data: "sender" },
+          
+            { data: "senderName" },
+            { data: "datePayment" },
+            { data: "dateRecorded" },
+            {
+                data: "receipt",
+                render: function(data) {
+                    if(data && data !== "لا يوجد") {
+                        const fileName = data.split(/[/\\]/).pop();
+                        return `<a href="/receipts/${fileName}" target="_blank" class="btn btn-sm btn-primary mb-1">فتح</a><br>
+                                <img src="/receipts/${fileName}" class="img-thumbnail">`;
+                    }
+                    return '<span class="text-muted">لا يوجد</span>';
+                }
+            },
+            {
+                data: null,
+                orderable: false,
+                render: function(data, type, row) {
+                    return `
+                        <button class="btn btn-sm btn-success approve-btn" data-id="${row.id}">✅ قبول</button>
+                        <button class="btn btn-sm btn-danger delete-btn" data-id="${row.id}">🗑️ حذف</button>
+                    `;
+                }
+            }
+        ],
+        language: {
+            url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/ar.json"
+        },
+        pageLength: 10,
+        lengthMenu: [5,10,25,50,100]
+    });
+
+    // طلب إذن الإشعارات
+    if(Notification.permission !== "granted") {
+        Notification.requestPermission();
+    }
+
+    // تحديث تلقائي + صوت وإشعار
+    setInterval(function() {
+        table.ajax.reload(function(json) {
+            const newCount = json.length;
+            if(lastCount && newCount > lastCount) {
+                document.getElementById('notifySound').play();
+                if(Notification.permission === "granted") {
+                    new Notification("دفعة جديدة", { body: "تم تسجيل دفعة جديدة في النظام ✅" });
+                }
+            }
+            lastCount = newCount;
+        }, false);
+    }, 2000);
+
+    // زر القبول
+    $('#paymentsTable tbody').on('click', '.approve-btn', function() {
+        const id = $(this).data('id');
+        $.post(`/api/payments/approve/${id}`, function(resp){
+            if(resp.success) {
+                alert('تمت الموافقة ✅');
+                table.ajax.reload(null,false);
+            }
+        });
+    });
+
+    // زر الحذف (Soft Delete)
+    $('#paymentsTable tbody').on('click', '.delete-btn', function() {
+        const id = $(this).data('id');
+        if(confirm('هل أنت متأكد من حذف الدفعة؟')) {
+            $.post(`/api/payments/delete/${id}`, function(resp){
+                if(resp.success) {
+                    alert('تم الحذف 🗑️');
+                    table.ajax.reload(null,false);
+                }
+            });
+        }
+    });
+});
+</script>
+</body>
+</html>
