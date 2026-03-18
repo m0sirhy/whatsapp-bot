@@ -2,147 +2,171 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>دفعات المشتركين</title>
-    <!-- Bootstrap CSS -->
+    <title>دفعات المشتركين | مولدات أبو حصيرة</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <!-- DataTables CSS -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        img { max-width: 100px; height: auto; }
-        table.dataTable tbody tr:nth-child(even) { background-color: #f9f9f9; }
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
+        img { max-width: 100px; height: auto; border-radius: 5px; }
         table.dataTable tbody tr:hover { background-color: #d1ecf1 !important; }
         th { text-align: right; }
         td { vertical-align: middle; }
+        
+        /* تأثير النبض للمؤشر الأخضر */
+        .shadow-pulse {
+            box-shadow: 0 0 0 rgba(40, 167, 69, 0.4);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
     </style>
 </head>
 <body>
-<div class="container">
-                <%- include('partials/navbar') %>
 
-    <h1 class="mb-4 text-center">دفعات المشتركين</h1>
+<%- include('partials/navbar') %>
 
-    <table id="paymentsTable" class="table table-striped table-bordered" style="width:100%">
-        <thead class="table-dark">
-        <tr>
-            <th>اسم المشترك</th>
-            <th>قيمة الدفعة</th>
-            <th>صاحب الحساب المرسل</th>
-            <th>اسم المرسل</th>
-            <th>تاريخ الدفعة</th>
-            <th>تاريخ تسجيل الدفعة</th>
-            <th>الإشعار</th>
-            <th>الإجراءات</th>
-        </tr>
-        </thead>
-    </table>
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">دفعات المشتركين</h1>
+        <div class="bg-dark p-2 rounded d-flex align-items-center">
+            <span id="status-dot" class="rounded-circle me-2" style="width: 12px; height: 12px; background-color: gray; display: inline-block;"></span>
+            <span id="status-text" class="text-light small">جاري الفحص...</span>
+        </div>
+    </div>
+
+    <div class="card shadow-sm p-3">
+        <table id="paymentsTable" class="table table-striped table-bordered" style="width:100%">
+            <thead class="table-dark">
+                <tr>
+                    <th>اسم المشترك</th>
+                    <th>قيمة الدفعة</th>
+                    <th>صاحب الحساب</th>
+                    <th>اسم المرسل</th>
+                    <th>تاريخ الدفعة</th>
+                    <th>تسجيل الدفعة</th>
+                    <th>الإشعار</th>
+                    <th>الإجراءات</th>
+                </tr>
+            </thead>
+        </table>
+    </div>
 </div>
 
-<!-- jQuery -->
+<audio id="notifySound" src="/sounds/notification.mp3" preload="auto"></audio>
+
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
-<!-- DataTables JS -->
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
-<!-- صوت الإشعار -->
-<audio id="notifySound" src="/sounds/notification.mp3" preload="auto"></audio>
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
-$(document).ready(function() {
-    // 1. إعداد الجدول
-    const table = $('#paymentsTable').DataTable({
-        ajax: {
-            url: "/api/payments",
-            dataSrc: "",
-            error: function(xhr, error, thrown) {
-                console.error("AJAX Error:", error, thrown);
-            }
-        },
-        columns: [
-            { data: "name" },
-            { data: "amount" },
-            { data: "sender" },
-            { data: "senderName" },
-            { data: "datePayment" },
-            { data: "dateRecorded" },
-            {
-                data: "receipt",
-                render: function(data) {
-                    if(data && data !== "لا يوجد") {
-                        const fileName = data.split(/[/\\]/).pop();
-                        return `<a href="/receipts/${fileName}" target="_blank" class="btn btn-sm btn-primary mb-1">فتح</a><br>
-                                <img src="/receipts/${fileName}" class="img-thumbnail" style="max-width: 100px;">`;
-                    }
-                    return '<span class="text-muted">لا يوجد</span>';
-                }
-            },
-            {
-                data: null,
-                orderable: false,
-                render: function(data, type, row) {
-                    return `
-                        <button class="btn btn-sm btn-success approve-btn" data-id="${row.id}">✅ قبول</button>
-                        <button class="btn btn-sm btn-danger delete-btn" data-id="${row.id}">🗑️ حذف</button>
-                    `;
-                }
-            }
-        ],
-        language: {
-            url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/ar.json"
-        },
-        pageLength: 10,
-        order: [[5, 'desc']] // ترتيب حسب تاريخ تسجيل الدفعة
-    });
+    // 1. تعريف دالة تحديث الواجهة أولاً
+    function updateStatusUI(status) {
+        const dot = $('#status-dot');
+        const text = $('#status-text');
+        dot.removeClass('shadow-pulse');
 
-    // 2. ربط Socket.io
-    const socket = io();
-
-    // 3. الاستماع لحدث "دفعة جديدة" (من البوت)
-    socket.on('new_payment', function() {
-        table.ajax.reload(null, false);
-        const audio = document.getElementById('notifySound');
-        if(audio) audio.play().catch(e => console.log("تفاعل مع الصفحة لتفعيل الصوت"));
-        
-        if(Notification.permission === "granted") {
-            new Notification("دفعة جديدة", { body: "تم تسجيل دفعة جديدة في النظام ✅" });
+        if (status === "connected") {
+            dot.css('background-color', '#28a745').addClass('shadow-pulse');
+            text.text("البوت متصل ✅");
+        } else if (status === "qr_ready") {
+            dot.css('background-color', '#ffc107');
+            text.text("بانتظار مسح الـ QR ⚠️");
+        } else {
+            dot.css('background-color', '#dc3545');
+            text.text("البوت متوقف ❌");
         }
-    });
-
-    // 4. الاستماع لحدث "تغيير البيانات" (عند القبول أو الحذف من أي مكان)
-    socket.on('data_changed', function() {
-        table.ajax.reload(null, false);
-    });
-
-    // طلب إذن الإشعارات
-    if(Notification.permission !== "granted") {
-        Notification.requestPermission();
     }
 
-    // 5. أزرار التحكم (Approve & Delete)
-    $('#paymentsTable tbody').on('click', '.approve-btn', function() {
-        const id = $(this).data('id');
-        $.post(`/api/payments/approve/${id}`, function(resp){
-            if(resp.success) {
-                // ملاحظة: لا حاجة لعمل reload هنا لأن data_changed ستتكفل بذلك للجميع
-                console.log('Approved');
+    $(document).ready(function() {
+        // 2. ربط Socket.io
+        const socket = io();
+
+        // 3. الاستماع لحالة البوت
+        socket.on('bot_status', function(status) {
+            updateStatusUI(status);
+        });
+
+        // 4. جلب الحالة الابتدائية عند التحميل
+        $.get('/api/bot-status', function(data) {
+            updateStatusUI(data.status);
+        });
+
+        // 5. إعداد الجدول
+        const table = $('#paymentsTable').DataTable({
+            ajax: {
+                url: "/api/payments",
+                dataSrc: ""
+            },
+            columns: [
+                { data: "name" },
+                { data: "amount" },
+                { data: "sender" },
+                { data: "senderName" },
+                { data: "datePayment" },
+                { data: "dateRecorded" },
+                {
+                    data: "receipt",
+                    render: function(data) {
+                        if(data && data !== "لا يوجد") {
+                            const fileName = data.split(/[/\\]/).pop();
+                            return `<a href="/receipts/${fileName}" target="_blank" class="btn btn-sm btn-outline-primary mb-1">فتح</a><br>
+                                    <img src="/receipts/${fileName}" class="img-thumbnail">`;
+                        }
+                        return '<span class="text-muted small">لا يوجد</span>';
+                    }
+                },
+                {
+                    data: null,
+                    orderable: false,
+                    render: function(data, type, row) {
+                        return `
+                            <button class="btn btn-sm btn-success approve-btn" data-id="${row.id}">✅ قبول</button>
+                            <button class="btn btn-sm btn-danger delete-btn" data-id="${row.id}">🗑️ حذف</button>
+                        `;
+                    }
+                }
+            ],
+            language: { url: "https://cdn.datatables.net/plug-ins/1.13.6/i18n/ar.json" },
+            order: [[5, 'desc']]
+        });
+
+        // 6. أحداث Socket.io للدفعات
+        socket.on('new_payment', function() {
+            table.ajax.reload(null, false);
+            document.getElementById('notifySound').play().catch(() => {});
+            if(Notification.permission === "granted") {
+                new Notification("دفعة جديدة", { body: "تم تسجيل دفعة جديدة في النظام ✅" });
+            }
+        });
+
+        socket.on('data_changed', function() {
+            table.ajax.reload(null, false);
+        });
+
+        // 7. طلب إذن الإشعارات
+        if(Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
+
+        // 8. أزرار التحكم
+        $('#paymentsTable tbody').on('click', '.approve-btn', function() {
+            const id = $(this).data('id');
+            $.post(`/api/payments/approve/${id}`, () => console.log('Approved'));
+        });
+
+        $('#paymentsTable tbody').on('click', '.delete-btn', function() {
+            const id = $(this).data('id');
+            if(confirm('هل أنت متأكد من حذف الدفعة؟')) {
+                $.post(`/api/payments/delete/${id}`, () => console.log('Deleted'));
             }
         });
     });
-
-    $('#paymentsTable tbody').on('click', '.delete-btn', function() {
-        const id = $(this).data('id');
-        if(confirm('هل أنت متأكد من حذف الدفعة؟')) {
-            $.post(`/api/payments/delete/${id}`, function(resp){
-                if(resp.success) {
-                    console.log('Deleted');
-                }
-            });
-        }
-    });
-});
 </script>
 </body>
 </html>
