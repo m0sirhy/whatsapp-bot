@@ -1,115 +1,188 @@
 const express = require('express');
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
+const session = require('express-session');
+const bcrypt = require('bcrypt');
+
+// استيراد الدوال من db.js (تأكد أن الملف موجود في نفس المجلد)
 const {
+    db, // استيراد القاعدة للعمليات المباشرة
+    dbRun, // للعمليات التي لا نملك لها دالة جاهزة
     getAllPayments,
     getApprovedPayments,
     getDeletedPayments,
+    getEnteredPayments,
     approvePayment,
     softDeletePayment,
     restorePayment
 } = require('./db');
 
+// استيراد البوت
+const { client, setIo } = require('./bot');
+
 const app = express();
 const port = 3000;
-const { db } = require('./db');
-const http = require('http');
-const { Server } = require('socket.io');
-const { client, setIo } = require('./bot'); // ربط البوت
-
-// حول app إلى server
 const server = http.createServer(app);
-
-// أنشئ Socket.io
 const io = new Server(server);
-const session = require('express-session');
-const bcrypt = require('bcrypt');
 
+// ربط الـ bot مع io ليرسل تنبيهات عند وصول رسائل جديدة
+setIo(io);
+global.ioInstance = io; // جعل الـ io متاحاً عالمياً للبوت
+
+// إعدادات الجلسة (Sessions)
 app.use(session({
-    secret: 'mySecretKey123!', // غيّرها لمفتاح قوي
+    secret: 'mySecretKey123!', // يفضل تغييرها لاحقاً
     resave: false,
     saveUninitialized: true,
-    cookie: { maxAge: 60*60*1000 } // ساعة واحدة
+    cookie: { maxAge: 60 * 60 * 1000 } // ساعة واحدة
 }));
 
-// بيانات الدخول (يمكن تغييرها لاحقاً)
+// بيانات الدخول (مشفرة بـ Bcrypt)
 const USERS = [
-    { username: 'admin', passwordHash: bcrypt.hashSync('1234', 10) } // كلمة المرور مشفرة
+    { username: 'admin', passwordHash: bcrypt.hashSync('1234', 10) }
 ];
 
-// Middleware لحماية الصفحات
+// Middleware لحماية الصفحات من الوصول غير المصرح به
 function authMiddleware(req, res, next) {
-    if(req.session && req.session.user) return next();
+    if (req.session && req.session.user) return next();
     res.redirect('/login');
 }
-// ربط الـ bot مع io
-setIo(io);
 
-// مثال لتسجيل اتصال أي عميل للـ QR
-io.on('connection', (socket) => {
-    console.log('New client connected for QR');
-});
-
-app.use('/receipts', express.static(path.join(__dirname,'receipts')));
-app.use('/sounds', express.static(path.join(__dirname,'sounds')));
-app.use(express.urlencoded({extended:true}));
+// إعدادات المجلدات الثابتة والقوالب
+app.use('/receipts', express.static(path.join(__dirname, 'receipts')));
+app.use('/sounds', express.static(path.join(__dirname, 'sounds')));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-app.set('view engine','ejs');
-app.set('views', path.join(__dirname,'views'));
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
+// --- مسارات تسجيل الدخول والخروج ---
 
-app.post('/login', express.urlencoded({extended:true}), (req,res)=>{
+app.get('/login', (req, res) => res.render('login', { page: 'index', error: null }));
+
+app.post('/login', (req, res) => {
     const { username, password } = req.body;
     const user = USERS.find(u => u.username === username);
 
-    if(user && bcrypt.compareSync(password, user.passwordHash)){
+    if (user && bcrypt.compareSync(password, user.passwordHash)) {
         req.session.user = username;
         return res.redirect('/');
     }
-
     res.render('login', { error: "اسم المستخدم أو كلمة المرور خاطئة" });
 });
-app.get('/logout', (req,res)=>{
+
+app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login');
 });
-app.get('/login', (req, res) => res.render('login',{ page: 'index' , error: null }));
 
-app.get('/', authMiddleware, (req,res)=> res.render('index', { page: 'index' }));
-app.get('/approved', authMiddleware, (req,res)=> res.render('approved', { page: 'approved' }));
-app.get('/deleted', authMiddleware, (req,res)=> res.render('deleted', { page: 'deleted' }));
-app.get('/entered', authMiddleware, (req,res)=> res.render('entered', { page: 'entered' }));
-app.get('/wats', authMiddleware, (req,res)=> res.render('wats', { page: 'wats' }));
+// --- مسارات الصفحات (Views) ---
 
-app.get('/api/payments', (req,res)=> getAllPayments((err,rows)=> err? res.status(500).json({error:err.message}): res.json(rows)));
-app.get('/api/payments/approved', (req,res)=> getApprovedPayments((err,rows)=> err? res.status(500).json({error:err.message}): res.json(rows)));
-app.get('/api/payments/deleted', (req,res)=> getDeletedPayments((err,rows)=> err? res.status(500).json({error:err.message}): res.json(rows)));
+app.get('/', authMiddleware, (req, res) => res.render('index', { page: 'index' }));
+app.get('/approved', authMiddleware, (req, res) => res.render('approved', { page: 'approved' }));
+app.get('/deleted', authMiddleware, (req, res) => res.render('deleted', { page: 'deleted' }));
+app.get('/entered', authMiddleware, (req, res) => res.render('entered', { page: 'entered' }));
+app.get('/wats', authMiddleware, (req, res) => res.render('wats', { page: 'wats' }));
 
-app.post('/api/payments/approve/:id', (req,res)=> approvePayment(req.params.id, err=> err? res.status(500).json({error:err.message}): res.json({success:true})));
-app.post('/api/payments/delete/:id', (req,res)=> softDeletePayment(req.params.id, err=> err? res.status(500).json({error:err.message}): res.json({success:true})));
-app.post('/api/payments/restore/:id', (req,res)=> restorePayment(req.params.id, err=> err? res.status(500).json({error:err.message}): res.json({success:true})));
-app.post('/api/payments/mark-entered/:id', (req, res) => {
-    const id = req.params.id;
-    db.run("UPDATE payments SET status='entered' WHERE id=?", [id], function(err){
-        if(err) return res.status(500).json({error: err.message});
-        res.json({success: true});
-    });
-});
-// جلب الدفعات التي تم إدخالها للنظام
-app.get('/api/payments/entered', (req, res) => {
-    db.all("SELECT * FROM payments WHERE status='entered'", (err, rows) => {
-        if(err) return res.status(500).json({error: err.message});
+// --- مسارات الـ API (تم تعديلها لنظام Async/Await) ---
+
+app.get('/api/payments', authMiddleware, async (req, res) => {
+    try {
+        const rows = await getAllPayments();
         res.json(rows);
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
-app.post('/api/send-whatsapp-message', express.json(), (req, res) => {
-    const { number, message } = req.body;
 
-    // استخدم البوت هنا
-    const formattedNumber = number.includes('@') ? number : `${number}@c.us`;
-
-    client.sendMessage(formattedNumber, message)
-        .then(() => res.json({success: true}))
-        .catch(err => res.status(500).json({error: err.message}));
+app.get('/api/payments/approved', authMiddleware, async (req, res) => {
+    try {
+        const rows = await getApprovedPayments();
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
-server.listen(port, ()=> console.log(`Server running at http://localhost:${port}`));
+
+app.get('/api/payments/deleted', authMiddleware, async (req, res) => {
+    try {
+        const rows = await getDeletedPayments();
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/payments/entered', authMiddleware, async (req, res) => {
+    try {
+        const rows = await getEnteredPayments();
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// عمليات التحديث (Approve, Delete, Restore, Mark-Entered)
+app.post('/api/payments/approve/:id', authMiddleware, async (req, res) => {
+    try {
+        await approvePayment(req.params.id);
+        io.emit('data_changed'); // تحديث اللوحة فوراً لكل المفتوح عندهم المتصفح
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/payments/delete/:id', authMiddleware, async (req, res) => {
+    try {
+        await softDeletePayment(req.params.id);
+        io.emit('data_changed');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/payments/restore/:id', authMiddleware, async (req, res) => {
+    try {
+        await restorePayment(req.params.id);
+        io.emit('data_changed');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/payments/mark-entered/:id', authMiddleware, async (req, res) => {
+    try {
+        await dbRun("UPDATE payments SET status='entered' WHERE id=?", [req.params.id]);
+        io.emit('data_changed');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// إرسال رسائل واتساب يدوياً من لوحة التحكم
+app.post('/api/send-whatsapp-message', authMiddleware, async (req, res) => {
+    try {
+        const { number, message } = req.body;
+        const formattedNumber = number.includes('@') ? number : `${number}@c.us`;
+        await client.sendMessage(formattedNumber, message);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// الاتصال بـ Socket.io
+io.on('connection', (socket) => {
+    console.log('Client connected to dashboard');
+});
+
+// تشغيل السيرفر
+server.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
